@@ -58,6 +58,8 @@ export default function Gallery() {
       setProgress(null);
       // `refresh` is captured by ref to avoid resubscribing on every filter change.
       refreshRef.current();
+      // The scan likely produced new tags — force TagFilter to refetch.
+      setTagsVersion((v) => v + 1);
     });
     return () => {
       offP();
