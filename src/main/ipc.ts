@@ -1,4 +1,6 @@
 import { ipcMain, dialog, BrowserWindow, shell } from "electron";
+import path from "node:path";
+import fs from "node:fs/promises";
 import { getDb, getMeta, setMeta } from "./db";
 import { scanLibrary, listImages } from "./scanner";
 import { writeXmpTags } from "./xmp";
@@ -251,6 +253,101 @@ export function registerIpc(): void {
           .all(row.id) as { name: string }[]
       ).map((r) => r.name);
       return row;
+    }
+  );
+
+  const siblingSql = (direction: "next" | "prev") => `
+    SELECT ${SELECT_COLS}
+    FROM folders f
+    WHERE f.parent_id = ?
+      AND f.name COLLATE NOCASE ${direction === "next" ? ">" : "<"} ?
+      AND f.image_count > 0
+    ORDER BY f.name COLLATE NOCASE ${direction === "next" ? "ASC" : "DESC"}
+    LIMIT 1
+  `;
+  const sibling = (id: number, direction: "next" | "prev"): FolderRow | null => {
+    const db = getDb();
+    const cur = db.prepare("SELECT parent_id, name FROM folders WHERE id = ?").get(id) as
+      | { parent_id: number | null; name: string }
+      | undefined;
+    if (!cur || cur.parent_id === null) return null;
+    const row = db.prepare(siblingSql(direction)).get(cur.parent_id, cur.name) as
+      | FolderRow
+      | undefined;
+    if (!row) return null;
+    row.tags = (
+      db
+        .prepare(
+          `SELECT DISTINCT t.name FROM tags t JOIN folder_tags ft ON ft.tag_id = t.id
+           WHERE ft.folder_id = ? ORDER BY t.name`
+        )
+        .all(row.id) as { name: string }[]
+    ).map((r) => r.name);
+    return row;
+  };
+  ipcMain.handle("library:next-sibling", (_e, id: number) => sibling(id, "next"));
+  ipcMain.handle("library:prev-sibling", (_e, id: number) => sibling(id, "prev"));
+
+  ipcMain.handle(
+    "library:rename-folder",
+    async (_e, args: { id: number; newName: string }) => {
+      const { id } = args;
+      const newName = args.newName.trim();
+      if (!newName) throw new Error("Folder name cannot be empty");
+      if (/[\\/:*?"<>|]/.test(newName)) {
+        throw new Error('Folder name cannot contain \\ / : * ? " < > |');
+      }
+      const db = getDb();
+      const row = db.prepare("SELECT path, name, parent_id FROM folders WHERE id = ?").get(id) as
+        | { path: string; name: string; parent_id: number | null }
+        | undefined;
+      if (!row) throw new Error("Folder not found");
+      if (row.name === newName) return; // no-op
+
+      const oldPath = row.path;
+      const newPath = path.join(path.dirname(oldPath), newName);
+
+      // Refuse if a different filesystem entry already lives at the target.
+      // (case-insensitive on Windows: renaming "Foo" → "foo" on the same path
+      // is allowed by fs.rename and useful for case fixes.)
+      const isCaseOnly = oldPath.toLowerCase() === newPath.toLowerCase();
+      if (!isCaseOnly) {
+        try {
+          await fs.access(newPath);
+          throw new Error(`A folder named "${newName}" already exists here`);
+        } catch (e: unknown) {
+          if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
+        }
+      }
+
+      await fs.rename(oldPath, newPath);
+
+      // Patch the DB: this folder's row, every descendant's path, every
+      // cover_path that lived under the old folder. SUBSTR-prefix-rewrite is
+      // cheap and exact.
+      const oldLen = oldPath.length;
+      const winPrefix = oldPath + "\\";
+      const nixPrefix = oldPath + "/";
+      const updatePath = db.prepare(
+        `UPDATE folders
+         SET path = ? || SUBSTR(path, ? + 1)
+         WHERE path = ? OR path LIKE ? OR path LIKE ?`
+      );
+      const updateCover = db.prepare(
+        `UPDATE folders
+         SET cover_path = ? || SUBSTR(cover_path, ? + 1)
+         WHERE cover_path LIKE ? OR cover_path LIKE ?`
+      );
+      const updateName = db.prepare("UPDATE folders SET name = ? WHERE id = ?");
+      db.transaction(() => {
+        updatePath.run(newPath, oldLen, oldPath, winPrefix + "%", nixPrefix + "%");
+        updateCover.run(newPath, oldLen, winPrefix + "%", nixPrefix + "%");
+        updateName.run(newName, id);
+      })();
+
+      // If we renamed the scanned root, repoint the meta entry too.
+      const rootPath = getMeta("root_path");
+      if (rootPath === oldPath) setMeta("root_path", newPath);
     }
   );
 

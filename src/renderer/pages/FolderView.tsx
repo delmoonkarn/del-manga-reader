@@ -5,6 +5,7 @@ import Card from "../components/Card";
 import SortPicker from "../components/SortPicker";
 import Breadcrumb, { Crumb } from "../components/Breadcrumb";
 import TagEditor from "../components/TagEditor";
+import RenameDialog from "../components/RenameDialog";
 import { useScrollRestore } from "../lib/useScrollRestore";
 import { getLastVisited, focusFolderCard, clearLastVisited } from "../lib/lastVisited";
 import { useStore } from "../store";
@@ -19,12 +20,17 @@ export default function FolderView() {
   const [subExpanded, setSubExpanded] = useState(false);
   const [trail, setTrail] = useState<Crumb[]>([]);
   const [editTags, setEditTags] = useState(false);
+  const [renaming, setRenaming] = useState(false);
   const { clearTags, toggleTag, folderSortBy, folderSortDir } = useStore();
 
   const refreshSelf = async () => {
     const [fresh, freshPages] = await Promise.all([api.get(folderId), api.pages(folderId)]);
     setSelf(fresh);
     setPages(freshPages);
+  };
+
+  const refreshChildren = async () => {
+    setRows(await api.children(folderId, { by: folderSortBy, dir: folderSortDir }));
   };
 
   const filterByTag = (tag: string) => {
@@ -71,6 +77,15 @@ export default function FolderView() {
           <Breadcrumb trail={trail} />
         </div>
         {hasChildren && <SortPicker scope="folder" />}
+        {self && (
+          <button
+            onClick={() => setRenaming(true)}
+            className="px-2 py-1 bg-neutral-800 hover:bg-neutral-700 rounded text-xs whitespace-nowrap"
+            title="Rename this folder"
+          >
+            ✎ Rename
+          </button>
+        )}
         {self?.path && (
           <button
             onClick={() =>
@@ -114,14 +129,14 @@ export default function FolderView() {
                 style={{ gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))" }}
               >
                 {rows.map((r) => (
-                  <Card key={r.id} row={r} />
+                  <Card key={r.id} row={r} onChanged={refreshChildren} />
                 ))}
               </div>
             ) : (
               <div className="flex gap-4 overflow-x-auto pb-2 snap-x">
                 {rows.map((r) => (
                   <div key={r.id} className="w-[180px] shrink-0 snap-start">
-                    <Card row={r} />
+                    <Card row={r} onChanged={refreshChildren} />
                   </div>
                 ))}
               </div>
@@ -208,6 +223,19 @@ export default function FolderView() {
           <div className="text-neutral-500 text-sm p-8 text-center">Empty folder.</div>
         )}
       </main>
+
+      {renaming && self && (
+        <RenameDialog
+          folderId={self.id}
+          currentName={self.name}
+          onRenamed={async () => {
+            setRenaming(false);
+            await refreshSelf();
+            await api.ancestors(folderId).then(setTrail);
+          }}
+          onCancel={() => setRenaming(false)}
+        />
+      )}
     </div>
   );
 }

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { api, FolderRow, toLocalUrl } from "../api";
 import { useStore, ReaderMode } from "../store";
+import ChapterJumpDialog from "../components/ChapterJumpDialog";
 
 const MODE_ORDER: ReaderMode[] = ["single", "double", "scroll"];
 const MODE_LABEL: Record<ReaderMode, string> = {
@@ -23,10 +24,15 @@ export default function Reader() {
   const [idx, setIdx] = useState(startPage);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [nearTop, setNearTop] = useState(true);
+  const [nextFolder, setNextFolder] = useState<FolderRow | null>(null);
+  const [prevFolder, setPrevFolder] = useState<FolderRow | null>(null);
+  const [jump, setJump] = useState<{ folder: FolderRow; direction: "next" | "prev" } | null>(null);
 
   useEffect(() => {
     api.get(folderId).then(setFolder);
     api.pages(folderId).then(setPages);
+    api.nextSibling(folderId).then(setNextFolder);
+    api.prevSibling(folderId).then(setPrevFolder);
     setIdx(startPage);
   }, [folderId, startPage]);
 
@@ -40,8 +46,31 @@ export default function Reader() {
     setNearTop(true);
   }, []);
 
-  const next = useCallback(() => setIdx((i) => Math.min(i + 1, pages.length - 1)), [pages.length]);
-  const prev = useCallback(() => setIdx((i) => Math.max(i - 1, 0)), []);
+  const next = useCallback(() => {
+    if (jump) return; // dialog already open
+    if (idx < pages.length - 1) {
+      setIdx(idx + 1);
+      return;
+    }
+    if (nextFolder) setJump({ folder: nextFolder, direction: "next" });
+  }, [idx, pages.length, nextFolder, jump]);
+  const prev = useCallback(() => {
+    if (jump) return;
+    if (idx > 0) {
+      setIdx(idx - 1);
+      return;
+    }
+    if (prevFolder) setJump({ folder: prevFolder, direction: "prev" });
+  }, [idx, prevFolder, jump]);
+
+  // Replace history so Back from the new chapter lands on the gallery, not the
+  // chapter that just triggered the dialog.
+  const confirmJump = useCallback(() => {
+    if (!jump) return;
+    const targetId = jump.folder.id;
+    setJump(null);
+    nav(`/read/${targetId}`, { replace: true });
+  }, [jump, nav]);
   const cycleMode = useCallback(() => {
     const i = MODE_ORDER.indexOf(readerMode);
     setReaderMode(MODE_ORDER[(i + 1) % MODE_ORDER.length]);
@@ -165,6 +194,15 @@ export default function Reader() {
       {readerMode === "single" && <SingleMode sources={sources} idx={idx} next={next} prev={prev} maxH={maxH} />}
       {readerMode === "double" && <DoubleMode sources={sources} idx={idx} next={next} prev={prev} maxH={maxH} />}
       {readerMode === "scroll" && <ScrollMode sources={sources} />}
+
+      {jump && (
+        <ChapterJumpDialog
+          target={jump.folder}
+          direction={jump.direction}
+          onConfirm={confirmJump}
+          onCancel={() => setJump(null)}
+        />
+      )}
     </div>
   );
 }

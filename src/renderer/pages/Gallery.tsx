@@ -182,7 +182,7 @@ export default function Gallery() {
             style={{ gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))" }}
           >
             {rows.map((r) => (
-              <Card key={r.id} row={r} />
+              <Card key={r.id} row={r} onChanged={refresh} />
             ))}
           </div>
         )}

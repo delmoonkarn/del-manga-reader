@@ -27,6 +27,10 @@ const api = {
   get: (id: number): Promise<FolderRow | null> => ipcRenderer.invoke("library:get", id),
   ancestors: (id: number): Promise<{ id: number; name: string; depth: number }[]> =>
     ipcRenderer.invoke("library:ancestors", id),
+  nextSibling: (id: number): Promise<FolderRow | null> =>
+    ipcRenderer.invoke("library:next-sibling", id),
+  prevSibling: (id: number): Promise<FolderRow | null> =>
+    ipcRenderer.invoke("library:prev-sibling", id),
   pages: (id: number): Promise<string[]> => ipcRenderer.invoke("library:pages", id),
   search: (
     query: string,
@@ -45,6 +49,8 @@ const api = {
   isFullscreen: (): Promise<boolean> => ipcRenderer.invoke("window:is-fullscreen"),
   openFolder: (folderPath: string): Promise<void> =>
     ipcRenderer.invoke("shell:open-path", folderPath),
+  renameFolder: (id: number, newName: string): Promise<void> =>
+    ipcRenderer.invoke("library:rename-folder", { id, newName }),
   allTags: (withTags?: string[]): Promise<{ name: string; n: number }[]> =>
     ipcRenderer.invoke("library:all-tags", withTags),
   writeTags: (

@@ -1,10 +1,13 @@
+import { useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { FolderRow, toLocalUrl } from "../api";
 import { setLastVisited } from "../lib/lastVisited";
+import RenameDialog from "./RenameDialog";
 
-export default function Card({ row }: { row: FolderRow }) {
+export default function Card({ row, onChanged }: { row: FolderRow; onChanged?: () => void }) {
   const nav = useNavigate();
   const location = useLocation();
+  const [renaming, setRenaming] = useState(false);
   // Always show the overview/gallery first; the Reader is opened from there.
   const goto = () => {
     setLastVisited(location.pathname, row.id);
@@ -16,8 +19,38 @@ export default function Card({ row }: { row: FolderRow }) {
     <button
       onClick={goto}
       data-folder-id={row.id}
-      className="group text-left w-full block"
+      className="group text-left w-full block relative"
     >
+      <span
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setRenaming(true);
+        }}
+        role="button"
+        title="Rename folder"
+        className="absolute top-1 right-1 z-10 px-1.5 py-0.5 text-xs bg-black/70 hover:bg-indigo-600 text-neutral-100 rounded opacity-0 group-hover:opacity-100 transition cursor-pointer"
+      >
+        ✎
+      </span>
+      {renaming && (
+        <span
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+          }}
+        >
+          <RenameDialog
+            folderId={row.id}
+            currentName={row.name}
+            onRenamed={() => {
+              setRenaming(false);
+              onChanged?.();
+            }}
+            onCancel={() => setRenaming(false)}
+          />
+        </span>
+      )}
       <div className="aspect-[2/3] bg-neutral-800 overflow-hidden rounded-md ring-1 ring-neutral-800 group-hover:ring-indigo-500 transition">
         {row.cover_path ? (
           <img
