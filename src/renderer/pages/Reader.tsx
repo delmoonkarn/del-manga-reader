@@ -84,7 +84,9 @@ export default function Reader() {
         toggleFullscreen();
       } else if (e.key === "Escape") {
         if (isFullscreen) toggleFullscreen();
-        else nav(-1);
+        // Always go to *this* chapter's folder view, even when we got here
+        // via a next/prev chapter jump.
+        else nav(`/folder/${folderId}`);
       } else if (e.key === "v" || e.key === "V") cycleMode();
       else if (readerMode === "single" || readerMode === "double") {
         if (e.key === "ArrowRight" || e.key === "d" || e.key === "D") next();
@@ -93,7 +95,7 @@ export default function Reader() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [readerMode, next, prev, nav, cycleMode, toggleFullscreen, isFullscreen]);
+  }, [readerMode, next, prev, nav, cycleMode, toggleFullscreen, isFullscreen, folderId]);
 
   // Auto-hide header in fullscreen until mouse goes near the top edge — no delay either way.
   useEffect(() => {
@@ -138,7 +140,10 @@ export default function Reader() {
         }
         onMouseEnter={() => isFullscreen && setNearTop(true)}
       >
-        <button onClick={() => nav(-1)} className="text-indigo-400 hover:text-indigo-300">
+        <button
+          onClick={() => nav(`/folder/${folderId}`)}
+          className="text-indigo-400 hover:text-indigo-300"
+        >
           ← Back
         </button>
         <div className="truncate text-neutral-300" title={folder?.path}>
